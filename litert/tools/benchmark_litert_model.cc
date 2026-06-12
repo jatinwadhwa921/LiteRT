@@ -14,6 +14,9 @@ limitations under the License.
 ==============================================================================*/
 #include "litert/tools/benchmark_litert_model.h"
 
+#include <dlfcn.h>
+
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <memory>
@@ -23,10 +26,12 @@ limitations under the License.
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/strings/numbers.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_split.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_environment.h"
 #include "litert/cc/internal/litert_compiled_model_next.h"
 #include "litert/cc/internal/litert_tflite_error_status_builder.h"
 #include "litert/cc/litert_common.h"
@@ -51,6 +56,7 @@ limitations under the License.
 #include "tflite/c/c_api_types.h"
 #include "tflite/c/common.h"
 #include "tflite/interpreter.h"
+#include "tflite/tools/benchmark/benchmark_model.h"
 
 namespace litert::benchmark {
 namespace {
@@ -349,11 +355,20 @@ TfLiteStatus BenchmarkLiteRtModel::Init() {
     AddListener(model_runtime_info_listener_.get());
   }
 
-  auto use_profiler = params_.Get<bool>("use_profiler");
+  if (!params_.Get<std::string>("vendor_hook_args").empty()) {
+    setenv("LITERT_VENDOR_HOOK_ARGS",
+           params_.Get<std::string>("vendor_hook_args").c_str(), 1);
+  }
+
+  bool use_profiler = params_.Get<bool>("use_profiler");
   if (use_profiler) {
     LITERT_ASSIGN_OR_ABORT(profiler_, compiled_model_->GetProfiler());
+
+    LITERT_LOG(LITERT_INFO, "Benchmark using profiler %p", profiler_.Get());
+
     profiler_.StartProfiling();
   }
+
   LITERT_ASSIGN_OR_RETURN(
       std::string signature, GetCurrentSignatureKey(),
       AsTfLiteStatus(_ << "Failed to get current signature key."));

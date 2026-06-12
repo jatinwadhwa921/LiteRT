@@ -58,8 +58,8 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_accelerator.h"
-#include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_delegate_wrapper.h"
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_any.h"
@@ -68,6 +68,7 @@
 #include "litert/c/litert_opaque_options.h"
 #include "litert/c/litert_options.h"
 #include "litert/c/litert_profiler_event.h"
+#include "litert/c/litert_profiler_types.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
@@ -267,6 +268,7 @@ LiteRtCompiledModelT::LiteRtCompiledModelT(LiteRtEnvironmentT* env)
 
 LiteRtCompiledModelT::~LiteRtCompiledModelT() {
   if (profiler_ != nullptr) {
+    profiler_->TriggerHook(kLiteRtHookTypeStopAndProcess, nullptr, 0);
     delete profiler_;
     profiler_ = nullptr;
   }
@@ -419,12 +421,6 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
         interpreter_options.SetShloCompositeInlining(true);
         interpreter_options.SetCompressQuantizationZeroPoints(
             runtime_options.compress_quantization_zero_points);
-        if (runtime_options.enable_profiling) {
-          // Increase the default profiling buffer size to 512 * 1024 entries to
-          // prevent dropping events during LLM benchmarks.
-          profiler_ =
-              new LiteRtProfilerT(/*max_profiling_buffer_entries=*/512 * 1024);
-        }
         interpreter_options.SetDisableDelegateClustering(
             runtime_options.disable_delegate_clustering);
 
@@ -479,9 +475,10 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
     }
   }
 
-  if (profiler_ != nullptr) {
-    interp_->SetProfiler(profiler_);
+  if (profiler_ == nullptr) {
+    profiler_ = new LiteRtProfilerT();
   }
+  interp_->SetProfiler(profiler_);
 
   signature_keys_ = interp_->signature_keys();
   if (signature_keys_.empty()) {
@@ -1035,11 +1032,36 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
                                       void (*)(LiteRtDelegateWrapper)>{
           delegate_wrapper, &LiteRtDestroyDelegateWrapper};
 
+      if (accelerator->GetHooks != nullptr) {
+        LiteRtHook hook = nullptr;
+        void* user_data = nullptr;
+        LiteRtStatus status = accelerator->GetHooks(
+            LrtGetRuntimeContext(), delegate_wrapper, &hook, &user_data);
+        if (status == kLiteRtStatusOk && hook != nullptr) {
+          LITERT_LOG(LITERT_INFO,
+                     "Successfully retrieved and registered vendor hooks in "
+                     "CompiledModel.");
+          compiled_model->profiler_->RegisterHook(hook, user_data);
+          compiled_model->profiler_->TriggerHook(kLiteRtHookTypeCompilerStart,
+                                                 nullptr, 0);
+        } else if (status != kLiteRtStatusOk) {
+          LITERT_LOG(LITERT_ERROR, "Failed to get hooks from accelerator: %d",
+                     status);
+        } else {
+          LITERT_LOG(LITERT_INFO, "Accelerator returned null hooks.");
+        }
+      }
+
       if (compiled_model->interp_->ModifyGraphWithDelegate(
               delegate_ptr, compiled_model->active_subgraph_indices_) !=
           kTfLiteOk) {
         return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                           "Failed to modify graph with delegate");
+      }
+
+      if (compiled_model->profiler_ != nullptr) {
+        compiled_model->profiler_->TriggerHook(kLiteRtHookTypeCompilerStop,
+                                               nullptr, 0);
       }
 
       compiled_model->RegisterDelegate({std::move(delegate),
@@ -2109,6 +2131,15 @@ Expected<void> LiteRtCompiledModelT::Run(
   absl::Cleanup restore_run_options = [this, previous_run_options]() {
     if (buffer_context_ != nullptr) {
       buffer_context_->SetRunOptions(previous_run_options);
+    }
+  };
+
+  if (profiler_ != nullptr) {
+    profiler_->TriggerHook(kLiteRtHookTypeRuntimeStart, nullptr, 0);
+  }
+  absl::Cleanup stop_hooks = [this]() {
+    if (profiler_ != nullptr) {
+      profiler_->TriggerHook(kLiteRtHookTypeRuntimeStop, nullptr, 0);
     }
   };
 
