@@ -126,6 +126,19 @@ class AtsConf {
   bool IsGpu() const { return backend_ == ExecutionBackend::kGpu; }
   bool IsCpu() const { return backend_ == ExecutionBackend::kCpu; }
 
+  // Whether the target execution backend executes in reduced / half precision
+  // (FP16).
+  bool IsHalfPrecisionBackend() const {
+    if (IsNpu()) {
+      return true;
+    }
+    if (IsGpu()) {
+      // GPU uses FP16 by default unless explicitly configured for FP32.
+      return true;
+    }
+    return false;
+  }
+
   // Whether to minimize logging.
   bool Quiet() const { return quiet_; }
 
