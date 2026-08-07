@@ -92,8 +92,7 @@ void ConvertDepthwiseConv(
   const TfLiteTensor* weights_tensor = context.tensors + node.inputs->data[1];
   const ::ml_drift::ir::IrTensorId weights_id =
       tensor_map[node.inputs->data[1]];
-  if (tflite::IsConstantTensor(weights_tensor) &&
-      !ir_model.tensor(weights_id)->buffer_source.is_shared) {
+  if (tflite::IsConstantTensor(weights_tensor)) {
     PopulateTensor(weights_tensor, node.inputs->data[1], &weights,
                    PopulateTensorFlags::kExtraBytes,
                    options.enable_spanned_weights);
@@ -109,9 +108,11 @@ void ConvertDepthwiseConv(
       node.inputs->size > 2 && node.inputs->data[2] != kTfLiteOptionalTensor;
   if (has_bias) {
     const TfLiteTensor* bias_tensor = context.tensors + node.inputs->data[2];
-    PopulateTensor(bias_tensor, node.inputs->data[2], &attr.bias,
-                   PopulateTensorFlags::kNoExtraBytes,
-                   options.enable_spanned_weights);
+    if (tflite::IsConstantTensor(bias_tensor)) {
+      PopulateTensor(bias_tensor, node.inputs->data[2], &attr.bias,
+                     PopulateTensorFlags::kNoExtraBytes,
+                     options.enable_spanned_weights);
+    }
   }
 
   const auto* params =
