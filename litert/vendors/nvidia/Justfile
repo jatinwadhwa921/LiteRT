@@ -1,0 +1,8 @@
+set shell := ["bash", "--noprofile", "--norc", "-eu", "-o", "pipefail", "-c"]
+set working-directory := "../../.."
+
+build-nvidia-runtime:
+    env -u ANDROID_HOME -u ANDROID_SDK_HOME -u ANDROID_NDK_HOME \
+      bazel build -c opt --noincompatible_enable_android_toolchain_resolution \
+      //litert/vendors/nvidia/compiler:compiler_plugin_so \
+      //litert/vendors/nvidia/dispatch:dispatch_api_so

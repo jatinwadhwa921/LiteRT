@@ -50,6 +50,21 @@ TEST(OptionsTest, SetHardwareAccelerators) {
       internal::LiteRtOptionsPtrBuilder::Build(options, env.GetHolder()));
 }
 
+TEST(OptionsTest, SetSignaturesToCompileStoresCanonicalSelection) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
+  LITERT_EXPECT_OK(options.SetSignaturesToCompile({"superseded"}));
+  LITERT_EXPECT_OK(options.SetSignaturesToCompile(
+      {"prefill", "decode", "prefill"}));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto options_handle,
+      internal::LiteRtOptionsPtrBuilder::Build(options, env.GetHolder()));
+  auto* impl = reinterpret_cast<LiteRtOptionsT*>(options_handle.get());
+  EXPECT_EQ(impl->selected_signature_keys,
+            (std::vector<std::string>{"decode", "prefill"}));
+}
+
 TEST(OptionsTest, SetExternalWeightScopedFileStoresMetadata) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
