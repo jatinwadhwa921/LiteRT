@@ -199,6 +199,39 @@ class Environment {
   }
 
   /// @internal
+  /// @brief Returns the list of supported hardware accelerators available in
+  /// the environment.
+  Expected<std::vector<HwAccelerators>> GetAvailableAccelerators() const {
+    LiteRtParamIndex size;
+    if (auto status = runtime_->GetNumAccelerators(handle_.get(), &size);
+        status != kLiteRtStatusOk) {
+      return Error(ToStatus(status), "Failed to get number of accelerators.");
+    }
+
+    std::vector<HwAccelerators> accelerators;
+    accelerators.reserve(size);
+    for (LiteRtParamIndex i = 0; i < size; ++i) {
+      LiteRtAccelerator accelerator;
+      if (auto status =
+              runtime_->GetAccelerator(handle_.get(), i, &accelerator);
+          status != kLiteRtStatusOk) {
+        LITERT_LOG(LITERT_ERROR, "Failed to get accelerator.");
+        continue;
+      }
+      LiteRtHwAcceleratorSet hardware;
+      if (auto status =
+              runtime_->GetAcceleratorHardwareSupport(accelerator, &hardware);
+          status != kLiteRtStatusOk) {
+        LITERT_LOG(LITERT_ERROR,
+                   "Failed to get accelerator supported hardware.");
+        continue;
+      }
+      accelerators.push_back(static_cast<HwAccelerators>(hardware));
+    }
+    return accelerators;
+  }
+
+  /// @internal
   /// @brief Returns the underlying environment handle.
   [[deprecated("Use GetHolder() instead.")]]
   LiteRtEnvironment Get() const noexcept {
