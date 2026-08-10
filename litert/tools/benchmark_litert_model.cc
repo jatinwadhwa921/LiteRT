@@ -87,6 +87,10 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
   auto num_threads = params.Get<int>("num_threads");
   auto enable_weight_sharing = params.Get<bool>("enable_weight_sharing");
   auto convert_weights_on_gpu = params.Get<bool>("convert_weights_on_gpu");
+  auto gpu_serialization_dir =
+      params.Get<std::string>("gpu_serialization_dir");
+  auto gpu_model_cache_key =
+      params.Get<std::string>("gpu_model_cache_key");
   auto xnnpack_weight_cache_file_path =
       params.Get<std::string>("xnnpack_weight_cache_file_path");
   auto mediatek_nerun_pilot_version =
@@ -173,6 +177,12 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
     }
     if (convert_weights_on_gpu) {
       gpu_options.SetConvertWeightsOnGpu(true);
+    }
+    if (!gpu_serialization_dir.empty()) {
+      gpu_options.SetSerializationDir(gpu_serialization_dir.c_str());
+    }
+    if (!gpu_model_cache_key.empty()) {
+      gpu_options.SetModelCacheKey(gpu_model_cache_key.c_str());
     }
 
     auto use_profiler = params.Get<bool>("use_profiler");
